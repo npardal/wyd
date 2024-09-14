@@ -1,15 +1,18 @@
 const createError = require('http-errors');
 const express = require('express');
+const http = require('http');
 const path = require('path');
 const cookieParser = require('cookie-parser');
 const logger = require('morgan');
-const mongoose = require('mongoose'); // Include mongoose
-const port = process.env.PORT || 3001;
+const mongoose = require('mongoose');
+const WebSocket = require('ws');
 
 const indexRouter = require('./routes/index');
-const usersRouter = require('./routes/users'); // Import users router
+const usersRouter = require('./routes/users');
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
 const uri = "mongodb+srv://nicolepardall:Dobelove123%24@htndb.8i1gw.mongodb.net/?retryWrites=true&w=majority&appName=htnDB";
 const clientOptions = {
@@ -19,31 +22,29 @@ const clientOptions = {
 mongoose.connect(uri, clientOptions)
   .then(() => {
     console.log("Successfully connected to MongoDB!");
-
-    // Only start the server if MongoDB connection is successful
-    app.listen(port, () => {
-      console.log(`Server running on port ${port}`);
-    });
   })
   .catch(err => {
     console.error("MongoDB connection error:", err);
   });
 
+const connectedClients = {};
 
-  const connectedClients = {}; // Track connected clients
+wss.on('connection', function connection(ws, req) {
+  const userId = req.url.split('/')[1];  // Extract userId from URL, adjust as needed.
+  connectedClients[userId] = ws;
 
-  wss.on('connection', (ws, req) => {
-    const userId = req.url.split('/')[1]; // Assume userId is passed in the WebSocket URL
-    connectedClients[userId] = ws; // Save WebSocket connection
-    console.log(`User ${userId} connected`);
-  
-    ws.on('close', () => {
-      delete connectedClients[userId]; // Remove on disconnect
-      console.log(`User ${userId} disconnected`);
-    });
+  console.log(`User ${userId} connected`);
+
+  ws.on('message', function incoming(message) {
+    console.log('received: %s', message);
   });
 
-// view engine setup
+  ws.on('close', function() {
+    console.log(`User ${userId} disconnected`);
+    delete connectedClients[userId];
+  });
+});
+
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'jade');
 
@@ -53,20 +54,22 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Add this to link /users routes to the usersRouter
+app.use('/', indexRouter);
 app.use('/users', usersRouter);
 
-// catch 404 and forward to error handler
 app.use(function(req, res, next) {
   next(createError(404));
 });
 
-// error handler
 app.use(function(err, req, res, next) {
   res.locals.message = err.message;
   res.locals.error = req.app.get('env') === 'development' ? err : {};
   res.status(err.status || 500);
   res.render('error');
+});
+
+server.listen(3001, () => {
+  console.log(`Server running on port 3001`);
 });
 
 module.exports = app;
